@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # AQI Feature Pipeline
 
 This project fetches current weather and air-quality data from OpenWeather for DHA Phase 4, Lahore, then derives a single feature row you can later send to a feature store or use for model training.
@@ -177,3 +178,6 @@ If you want, the next step I can perform now is:
 - add a small pytest smoke test for the pipeline + trainer, and update the workflows to run the test.
 
 Tell me which of those additional tasks to implement, or I can stop here and just leave the README and Dockerfile changes applied.
+=======
+# AQI-Prediction-10Pearl
+>>>>>>> 9da246c23dfdea3926d8794689b2e0d4b4360a75
