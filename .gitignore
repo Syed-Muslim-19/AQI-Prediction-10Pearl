@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Generated pipeline outputs that should not be committed
+data/raw/
+data/model_registry/
+
+# Optional local environment files
+.env
