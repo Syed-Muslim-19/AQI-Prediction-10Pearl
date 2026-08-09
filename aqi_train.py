@@ -3,6 +3,10 @@
 The script reads the curated feature table, trains tabular regression models,
 evaluates them on a time-based holdout split, selects the best model by RMSE,
 and stores the winner in a local model registry folder.
+
+The holdout split size is computed adaptively from the row count, so it stays
+sensible whether the feature store has 70 rows today or 7,000 rows a year from
+now, without ever hardcoding an absolute row number.
 """
 
 from __future__ import annotations
@@ -20,13 +24,12 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
-from sklearn.ensemble import RandomForestRegressor
 from sklearn.impute import SimpleImputer
-from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from xgboost import XGBRegressor
 
 
 DEFAULT_FEATURE_STORE_PATH = Path("data/feature_store/aqi_feature_table.csv")
@@ -44,6 +47,8 @@ class TrainSettings:
     time_column: str
     group_column: str
     test_fraction: float
+    min_test_rows: int
+    max_test_fraction: float
     min_rows: int
     random_state: int
     include_tensorflow: bool
@@ -60,6 +65,7 @@ class ModelResult:
     row_count: int
     train_rows: int
     test_rows: int
+    test_fraction_used: float
     features: list[str]
 
 
@@ -70,7 +76,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-column", default=None)
     parser.add_argument("--time-column", default=None)
     parser.add_argument("--group-column", default=None)
-    parser.add_argument("--test-fraction", type=float, default=0.2)
+    parser.add_argument(
+        "--test-fraction",
+        type=float,
+        default=0.2,
+        help="Target fraction of rows to hold out once the dataset is large enough to support it.",
+    )
+    parser.add_argument(
+        "--min-test-rows",
+        type=int,
+        default=5,
+        help="Smallest acceptable holdout size in rows, regardless of dataset size.",
+    )
+    parser.add_argument(
+        "--max-test-fraction",
+        type=float,
+        default=0.3,
+        help="Upper bound on holdout fraction, so small datasets don't lose too much training data.",
+    )
     parser.add_argument("--min-rows", type=int, default=24)
     parser.add_argument("--random-state", type=int, default=42)
     parser.add_argument("--include-tensorflow", action="store_true")
@@ -86,6 +109,10 @@ def load_settings(args: argparse.Namespace) -> TrainSettings:
 
     if not 0 < args.test_fraction < 1:
         raise ValueError("test_fraction must be between 0 and 1.")
+    if not 0 < args.max_test_fraction < 1:
+        raise ValueError("max_test_fraction must be between 0 and 1.")
+    if args.min_test_rows < 1:
+        raise ValueError("min_test_rows must be at least 1.")
 
     return TrainSettings(
         feature_store_path=feature_store_path,
@@ -94,6 +121,8 @@ def load_settings(args: argparse.Namespace) -> TrainSettings:
         time_column=time_column,
         group_column=group_column,
         test_fraction=args.test_fraction,
+        min_test_rows=args.min_test_rows,
+        max_test_fraction=args.max_test_fraction,
         min_rows=args.min_rows,
         random_state=args.random_state,
         include_tensorflow=bool(args.include_tensorflow),
@@ -163,14 +192,62 @@ def make_preprocessor(numeric_columns: list[str], categorical_columns: list[str]
     )
 
 
-def temporal_train_test_split(frame: pd.DataFrame, y: pd.Series, test_fraction: float, time_column: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+def compute_adaptive_test_size(
+    n_rows: int,
+    target_fraction: float,
+    min_test_rows: int,
+    max_test_fraction: float,
+) -> int:
+    """Derive a holdout size in rows purely from the current dataset size.
+
+    No absolute row-count thresholds are hardcoded. Behavior scales automatically:
+      - Tiny datasets: the floor (`min_test_rows`) dominates, so evaluation still
+        has enough points to be non-degenerate (avoids the classic n_test=1 -> R2=0 trap).
+      - Mid-size datasets: the target fraction (e.g. 20%) applies directly.
+      - The `max_test_fraction` ceiling stops the holdout from ever eating too much
+        of a still-small dataset's training signal.
+    At least 1 row is always reserved for training.
+    """
+    if n_rows < 2:
+        raise ValueError("Need at least 2 usable rows to form any train/test split.")
+
+    fraction_based = math.ceil(n_rows * target_fraction)
+    test_size = max(fraction_based, min_test_rows)
+
+    ceiling = max(1, math.floor(n_rows * max_test_fraction))
+    test_size = min(test_size, ceiling)
+
+    # Never let the test split consume the entire dataset.
+    test_size = min(test_size, n_rows - 1)
+    test_size = max(test_size, 1)
+    return test_size
+
+
+def temporal_train_test_split(
+    frame: pd.DataFrame,
+    y: pd.Series,
+    time_column: str,
+    target_fraction: float,
+    min_test_rows: int,
+    max_test_fraction: float,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, float]:
     ordered_index = frame.sort_values(time_column).index
-    test_size = max(1, int(math.ceil(len(ordered_index) * test_fraction)))
+    n_rows = len(ordered_index)
+
+    test_size = compute_adaptive_test_size(
+        n_rows=n_rows,
+        target_fraction=target_fraction,
+        min_test_rows=min_test_rows,
+        max_test_fraction=max_test_fraction,
+    )
+
     test_index = ordered_index[-test_size:]
     train_index = ordered_index[:-test_size]
     if len(train_index) == 0:
         raise ValueError("Not enough rows to create a temporal train/test split.")
-    return frame.loc[train_index], frame.loc[test_index], y.loc[train_index], y.loc[test_index]
+
+    test_fraction_used = test_size / n_rows
+    return frame.loc[train_index], frame.loc[test_index], y.loc[train_index], y.loc[test_index], test_fraction_used
 
 
 def evaluate_predictions(y_true: pd.Series, y_pred: np.ndarray) -> dict[str, float]:
@@ -215,24 +292,20 @@ def try_train_tensorflow_model(X_train: pd.DataFrame, y_train: pd.Series, X_test
 def train_candidate_models(X_train: pd.DataFrame, y_train: pd.Series, X_test: pd.DataFrame, include_tensorflow: bool) -> dict[str, tuple[Any, np.ndarray]]:
     candidates: dict[str, tuple[Any, np.ndarray]] = {}
 
-    ridge = Pipeline(
-        steps=[
-            ("model", Ridge(alpha=1.0, random_state=42)),
-        ]
-    )
-    ridge.fit(X_train, y_train)
-    candidates["ridge"] = (ridge, ridge.predict(X_test))
-
-    random_forest = RandomForestRegressor(
+    xgboost_model = XGBRegressor(
         n_estimators=300,
-        max_depth=None,
-        min_samples_split=2,
-        min_samples_leaf=1,
+        max_depth=4,
+        learning_rate=0.05,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        reg_alpha=0.0,
+        reg_lambda=1.0,
+        objective="reg:squarederror",
         random_state=42,
         n_jobs=-1,
     )
-    random_forest.fit(X_train, y_train)
-    candidates["random_forest"] = (random_forest, random_forest.predict(X_test))
+    xgboost_model.fit(X_train, y_train)
+    candidates["xgboost"] = (xgboost_model, xgboost_model.predict(X_test))
 
     if include_tensorflow:
         tf_result = try_train_tensorflow_model(X_train, y_train, X_test)
@@ -263,11 +336,13 @@ def train_and_evaluate(settings: TrainSettings) -> tuple[ModelResult, Path, list
         settings.group_column,
     )
 
-    X_train_raw, X_test_raw, y_train, y_test = temporal_train_test_split(
+    X_train_raw, X_test_raw, y_train, y_test, test_fraction_used = temporal_train_test_split(
         feature_frame,
         y,
-        settings.test_fraction,
         settings.time_column,
+        target_fraction=settings.test_fraction,
+        min_test_rows=settings.min_test_rows,
+        max_test_fraction=settings.max_test_fraction,
     )
 
     usable_feature_columns = [column for column in feature_columns if X_train_raw[column].notna().any()]
@@ -314,6 +389,7 @@ def train_and_evaluate(settings: TrainSettings) -> tuple[ModelResult, Path, list
         row_count=len(feature_frame),
         train_rows=len(X_train_raw),
         test_rows=len(X_test_raw),
+        test_fraction_used=test_fraction_used,
         features=usable_feature_columns,
     )
 
@@ -355,6 +431,7 @@ def persist_model(
                 "created_at_utc": report.trained_at_utc,
                 "source_feature_store": str(settings.feature_store_path),
                 "row_count": report.row_count,
+                "test_fraction_used": report.test_fraction_used,
             },
             indent=2,
         ),
@@ -392,6 +469,7 @@ def main() -> None:
     print(f"- rmse: {result.rmse:.4f}")
     print(f"- mae: {result.mae:.4f}")
     print(f"- r2: {result.r2:.4f}")
+    print(f"- rows: {result.row_count} (train={result.train_rows}, test={result.test_rows}, test_fraction_used={result.test_fraction_used:.3f})")
     print(f"- registry_path: {registry_path}")
 
 
