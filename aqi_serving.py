@@ -221,12 +221,18 @@ def shap_explanations(feature_table: pd.DataFrame, artifacts: ModelArtifacts, to
     if hasattr(estimator, "named_steps") and "model" in estimator.named_steps:
         estimator = estimator.named_steps["model"]
 
+    # Model types that shap.TreeExplainer natively supports (fast, exact SHAP
+    # values via each library's tree-structure API). Add new tree-based model
+    # class-name prefixes here as they're introduced in train_candidate_models.
+    tree_model_prefixes = ("randomforest", "xgb", "lgbm", "gradientboosting", "extratrees", "catboost")
+
     try:
-        if estimator.__class__.__name__.lower().startswith("randomforest"):
+        estimator_name = estimator.__class__.__name__.lower()
+        if estimator_name.startswith(tree_model_prefixes):
             explainer = shap.TreeExplainer(estimator)
             shap_values = explainer.shap_values(latest)
             values = np.asarray(shap_values).reshape(-1)
-        elif estimator.__class__.__name__.lower().startswith("ridge"):
+        elif estimator_name.startswith("ridge"):
             explainer = shap.LinearExplainer(estimator, background)
             shap_values = explainer.shap_values(latest)
             values = np.asarray(shap_values).reshape(-1)
