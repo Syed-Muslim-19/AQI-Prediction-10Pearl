@@ -1,183 +1,86 @@
-<<<<<<< HEAD
-# AQI Feature Pipeline
+<div align="center">
 
-This project fetches current weather and air-quality data from OpenWeather for DHA Phase 4, Lahore, then derives a single feature row you can later send to a feature store or use for model training.
+# 🌫️ AQI Forecast
 
-## What it does
+**Hourly air-quality forecasting for Lahore, PK — built to be honest about its own accuracy.**
 
-- Pulls weather data from OpenWeather
-- Pulls AQI data from OpenWeather using Lahore coordinates
-- Derives time-based features like hour, day, month, and weekend flag
-- Builds lag, rolling, and forecast-target features for training
-- Stores raw JSON snapshots under `data/raw`
-- Appends processed features to `data/processed/feature_snapshot.csv`
-- Writes the curated training table to `data/feature_store/aqi_feature_table.csv`
+![Python](https://img.shields.io/badge/python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)
+![scikit--learn](https://img.shields.io/badge/scikit--learn-F7931E?style=flat-square&logo=scikitlearn&logoColor=white)
+![XGBoost](https://img.shields.io/badge/XGBoost-006ACC?style=flat-square)
+![Status](https://img.shields.io/badge/status-collecting%20data-yellow?style=flat-square)
 
-## Setup
-
-1. Create a virtual environment.
-2. Install dependencies from `requirements.txt`.
-3. Copy `.env.example` to `.env` and fill in your API keys.
-
-## Run
-
-```bash
-python aqi_pipeline.py
-```
-
-You can also override the defaults:
-
-```bash
-python aqi_pipeline.py --latitude 31.4697 --longitude 74.3984 --location-label "DHA Phase 4, Lahore, Pakistan"
-```
-
-## Historical Backfill
-
-To generate training data from a historical range, use:
-
-```bash
-python aqi_pipeline.py --backfill-start 2026-07-10T00:00:00Z --backfill-end 2026-07-18T23:00:00Z --backfill-step-hours 1
-```
-
-Backfill mode pulls historical weather data from OpenWeather One Call timemachine when available and historical air-pollution data from OpenWeather's air pollution history endpoint, then recomputes lag, rolling, and forecast target columns across the full historical frame.
-
-Note: if your account does not have One Call history access, the script falls back to a pollution-only historical backfill so you can still generate training rows and targets.
-
-## Notes
-
-- The OpenWeather air-pollution endpoint uses the same coordinates as the weather lookup.
-- The OpenWeather key should stay in environment variables, not in source control.
-- If you have a more exact DHA Phase 4 pin, update the latitude and longitude in `.env`.
-
-## Model Training
-
-Train models from the feature store with:
-
-```bash
-python aqi_train.py
-```
-
-The trainer loads `data/feature_store/aqi_feature_table.csv`, builds a time-based train/test split, compares tabular regression models, and selects the best one by RMSE. It currently compares Ridge regression and Random Forest, with an optional TensorFlow dense network if you install TensorFlow and pass `--include-tensorflow`.
-
-Training artifacts are written to `data/model_registry/`, including the serialized model, preprocessing pipeline, evaluation metrics, and a `latest_model.json` pointer.
-
-## Automated Runs
-
-This repository includes GitHub Actions workflows under `.github/workflows/`:
-
-- `feature_pipeline.yml` runs every hour and updates the checked-in feature store files.
-- `training_pipeline.yml` runs every day, refreshes the feature snapshot, trains the model, and uploads the model registry folder as a workflow artifact.
-
-Required GitHub settings:
-
-- `OPENWEATHER_API_KEY` as a repository secret
-- `AQI_LATITUDE`, `AQI_LONGITUDE`, and `AQI_LOCATION_LABEL` as repository variables if you want to override the Lahore defaults
-
-The hourly feature workflow commits updated `data/processed/feature_snapshot.csv` and `data/feature_store/aqi_feature_table.csv` back to the repository, which gives the daily trainer a persistent feature table to read from on the next run.
-
-## Web App and API
-
-The serving layer includes:
-
-- `api_server.py` (FastAPI) to load feature store + latest model registry artifact and expose prediction endpoints
-- `dashboard.py` (Streamlit) to show real-time AQI, forecasts, model comparison, EDA trends, SHAP explanations, and hazard alerts
-
-### Start API
-
-```bash
-uvicorn api_server:app --host 0.0.0.0 --port 8000
-```
-
-### Start Dashboard
-
-```bash
-streamlit run dashboard.py
-```
-
-If your API runs on a custom URL, set:
-
-```bash
-AQI_API_URL=http://your-host:8000
-```
-
-before launching Streamlit.
-
-### API Endpoints
-
-- `GET /health`
-- `GET /latest`
-- `GET /forecast?horizon_hours=72`
-- `GET /eda`
-- `GET /explain?top_k=10`
-- `POST /reload`
+</div>
 
 ---
 
-## Industry-readiness checklist (minimal, low-cost / free-tier)
+## Architecture
 
-This project is intentionally kept lightweight and free-friendly. The following small changes and practices make it suitable for an internship / small-team production workflow without requiring paid cloud resources.
+```mermaid
+flowchart LR
+    A[🛰️ OpenWeather API] -->|hourly scrape| B[(Feature Store<br/>aqi_feature_table.csv)]
+    B --> C{Training Pipeline<br/>aqi_train.py}
+    C --> D[Persistence Baseline]
+    C --> E[Model Zoo + CV Search]
+    E --> F[(Model Registry<br/>joblib + metrics.json)]
+    D & E --> G[Rolling Backtest]
+    G --> H[📋 Verdict]
+    F --> I[📊 Dashboard]
 
-1. Secrets and config
-   - Never commit real API keys. Use `.env` locally and store secrets in your CI (GitHub Actions: repository Secrets).
-   - A `.env.example` is present; copy it to `.env` and fill values locally.
+    style A fill:#2b2d42,color:#fff
+    style B fill:#8d99ae,color:#000
+    style C fill:#ef233c,color:#fff
+    style F fill:#8d99ae,color:#000
+    style I fill:#3a86ff,color:#fff
+```
 
-2. Reproducible environment
-   - Use the included `requirements.txt` and create an isolated virtual environment:
-     ```bash
-     python -m venv .venv
-     .\.venv\Scripts\activate    # Windows PowerShell
-     pip install --upgrade pip
-     pip install -r requirements.txt
-     ```
-   - Optionally pin exact versions with `pip freeze > requirements.lock` for reproducible CI runs.
+**Pipeline stages**
 
-3. CI / scheduled runs (already present)
-   - GitHub Actions workflows under `.github/workflows/` run the feature pipeline hourly and the trainer daily.
-   - Add `OPENWEATHER_API_KEY` to repository Secrets before enabling workflows.
+| Stage | What happens |
+|---|---|
+| **Scraper** | Polls OpenWeather hourly for weather + pollutant readings, appends to the feature store |
+| **Feature Store** | Flat CSV with raw readings, engineered lags/rolling means, and 1h/24h/72h forward targets |
+| **Training** | Delta-target regression (predict *change*, not raw AQI) with leakage-safe feature selection |
+| **Evaluation** | Persistence baseline + changed-rows breakdown + rolling-origin backtest — never a single trusted number |
+| **Registry** | Every run's model, preprocessor, and metrics saved and versioned by timestamp |
+| **Dashboard** | Visualizes AQI trend history, live forecast vs. actual, and backtest verdict over time |
 
-4. Model registry and evaluation
-   - Trained models are saved under `data/model_registry/` and `latest_model.json` points to the chosen model.
-   - The trainer compares multiple models (Ridge, RandomForest, and optional TensorFlow network). Evaluation metrics: RMSE, MAE, R².
-   - For categorical AQI alerts the serving layer already computes labels and alert levels; if you want a classification confusion matrix, add a small classifier training step (not required for numeric forecasting).
+---
 
-5. Observability and safety
-   - The API exposes `/health` for basic liveness checks.
-   - Workflows upload artifacts (feature snapshot and model registry) so you can inspect outputs from scheduled runs.
+## Models
 
-6. Local/dev deployment (no paid cloud required)
-   - Run the feature pipeline locally:
-     ```bash
-     python aqi_pipeline.py
-     ```
-   - Train locally (writes a model into `data/model_registry/`):
-     ```bash
-     python aqi_train.py
-     ```
-   - Start the API locally:
-     ```bash
-     uvicorn api_server:app --host 0.0.0.0 --port 8000
-     ```
-   - Start the Streamlit dashboard (connects to the API):
-     ```bash
-     streamlit run dashboard.py
-     ```
-   - A Dockerfile is included for running the API in a container (useful for consistent dev environments):
-     ```bash
-     docker build -t aqi-api:local .
-     docker run -p 8000:8000 --env-file .env aqi-api:local
-     ```
+Three tabular regressors, each tuned via `RandomizedSearchCV` over `TimeSeriesSplit`, competing on the same delta-target task:
 
-7. Next recommended improvements (optional, but low-effort)
-   - Add a small test suite (pytest) to cover pipeline core functions (parsing, feature building, training run smoke test).
-   - Add minimal linting (flake8) in CI.
-   - Add MLflow or local metadata tracking if you want richer experiment tracking (optional — MLflow can run locally and store artifacts on disk).
-   - Move secrets in CI to GitHub Actions secrets and remove any local secrets from repository (already applied to `.env`).
+| Model | Why it's here |
+|---|---|
+| 🌲 **XGBoost** | Captures nonlinear interactions between weather + pollutant features |
+| 🌳 **Random Forest** | Regularization-friendly baseline, resistant to overfitting on small data |
+| 📈 **Elastic Net** | Linear + sparse — a check against the tree models overfitting noise |
 
-If you want, the next step I can perform now is:
-- add a lightweight test and CI job for linting/testing, and/or
-- add a small pytest smoke test for the pipeline + trainer, and update the workflows to run the test.
+The winner is picked by RMSE (or by error on rows where AQI *actually changed*, once enough of those exist) — never assumed.
 
-Tell me which of those additional tasks to implement, or I can stop here and just leave the README and Dockerfile changes applied.
-=======
-# AQI-Prediction-10Pearl
->>>>>>> 9da246c23dfdea3926d8794689b2e0d4b4360a75
+---
+
+## Dashboard
+
+A lightweight view over the model registry, showing:
+
+- 📉 Recent AQI trend vs. 1h-ahead forecast
+- ✅ Live comparison against the persistence baseline
+- 🔁 Rolling backtest win-rate over time, so accuracy claims are always checkable at a glance
+
+*(planned / in progress — surfaces the same `VERDICT` the CLI prints, as a chart instead of a log line)*
+
+---
+
+## Quick start
+
+```bash
+pip install pandas numpy scikit-learn xgboost joblib scipy
+python aqi_train.py --feature-store-path data/feature_store/aqi_feature_table.csv
+```
+
+---
+
+<div align="center">
+<sub>Built with an unusual amount of paranoia about fooling itself.</sub>
+</div>
