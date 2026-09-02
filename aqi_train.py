@@ -20,7 +20,10 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from xgboost import XGBRegressor
+try:
+    from xgboost import XGBRegressor
+except ImportError:
+    XGBRegressor = None
 
 
 DEFAULT_FEATURE_STORE_PATH = Path("data/feature_store/aqi_feature_table.csv")
@@ -571,22 +574,6 @@ def build_search_spaces(random_state: int) -> dict[str, tuple[Any, dict[str, Any
     stronger regularization ceilings) since a ~200-row training set will
     overfit fast with the defaults a larger dataset could tolerate.
     """
-    xgboost_model = XGBRegressor(
-        objective="reg:squarederror",
-        random_state=random_state,
-        n_jobs=-1,
-    )
-    xgboost_space = {
-        "n_estimators": randint(50, 250),
-        "max_depth": randint(2, 5),
-        "learning_rate": uniform(0.01, 0.19),
-        "subsample": uniform(0.6, 0.4),
-        "colsample_bytree": uniform(0.6, 0.4),
-        "reg_alpha": uniform(0.0, 1.0),
-        "reg_lambda": uniform(0.5, 2.5),
-        "min_child_weight": randint(1, 6),
-    }
-
     random_forest_model = RandomForestRegressor(random_state=random_state, n_jobs=-1)
     random_forest_space = {
         "n_estimators": randint(100, 400),
@@ -601,11 +588,29 @@ def build_search_spaces(random_state: int) -> dict[str, tuple[Any, dict[str, Any
         "l1_ratio": uniform(0.0, 1.0),
     }
 
-    return {
-        "xgboost": (xgboost_model, xgboost_space),
+    search_spaces: dict[str, tuple[Any, dict[str, Any]]] = {
         "random_forest": (random_forest_model, random_forest_space),
         "elastic_net": (elastic_net_model, elastic_net_space),
     }
+    if XGBRegressor is not None:
+        xgboost_model = XGBRegressor(
+            objective="reg:squarederror",
+            random_state=random_state,
+            n_jobs=-1,
+        )
+        xgboost_space = {
+            "n_estimators": randint(50, 250),
+            "max_depth": randint(2, 5),
+            "learning_rate": uniform(0.01, 0.19),
+            "subsample": uniform(0.6, 0.4),
+            "colsample_bytree": uniform(0.6, 0.4),
+            "reg_alpha": uniform(0.0, 1.0),
+            "reg_lambda": uniform(0.5, 2.5),
+            "min_child_weight": randint(1, 6),
+        }
+        search_spaces["xgboost"] = (xgboost_model, xgboost_space)
+
+    return search_spaces
 
 
 def try_train_tensorflow_model(X_train: pd.DataFrame, y_train: pd.Series, X_test: pd.DataFrame) -> tuple[Any, np.ndarray] | None:
