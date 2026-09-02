@@ -19,9 +19,22 @@ def test_trainer_smoke(tmp_path):
         time_column="observed_at_utc",
         group_column="location_label",
         test_fraction=0.2,
-        min_rows=3,
+        min_test_rows=5,
+        max_test_fraction=0.3,
+        min_rows=24,
         random_state=42,
         include_tensorflow=False,
+        keep_high_cardinality=False,
+        cv_splits=2,
+        search_iterations=2,
+        target_mode="delta",
+        current_value_column="aqi",
+        backtest_folds=0,
+        skip_diagnostics=True,
+        selection_metric="rmse",
+        min_changed_rows_for_selection=5,
+        round_predictions=False,
+        no_ensemble=True,
     )
 
     result, registry_path, evaluation_rows = train_and_evaluate(settings)
