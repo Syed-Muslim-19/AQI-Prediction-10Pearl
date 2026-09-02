@@ -209,7 +209,8 @@ def shap_explanations(feature_table: pd.DataFrame, artifacts: ModelArtifacts, to
 
     sample = feature_table.sort_values("observed_at_utc").tail(min(200, len(feature_table))).copy()
     sample = sample.fillna(np.nan)
-    transformed = artifacts.preprocessor.transform(sample[artifacts.feature_columns])
+    sample_features = sample.reindex(columns=artifacts.feature_columns, fill_value=np.nan)
+    transformed = artifacts.preprocessor.transform(sample_features)
     if hasattr(transformed, "toarray"):
         transformed = transformed.toarray()
 
