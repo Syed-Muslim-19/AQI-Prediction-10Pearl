@@ -457,3 +457,4 @@ location_label,latitude,longitude,observed_at_utc,hour,day,month,day_of_week,is_
 "DHA Phase 4, Lahore, Pakistan",31.4697,74.3984,2026-09-05T16:41:14+00:00,16,5,9,5,1,Rain,light rain,29.01,34.55,29.01,29.01,79,1006,10000,2.06,160,34,0.16,,4,Poor,387.35,0.0,5.93,66.55,2.45,54.94,83.02,3.42,openweather
 "DHA Phase 4, Lahore, Pakistan",31.4722,74.4007,2026-09-05T18:54:33+00:00,18,5,9,5,1,Clouds,broken clouds,28.01,32.6,28.01,28.01,83,1006,10000,1.03,150,70,,,4,Poor,380.17,0.0,5.47,60.64,2.19,52.35,78.85,3.11,openweather
 "DHA Phase 4, Lahore, Pakistan",31.4697,74.3984,2026-09-05T21:02:05+00:00,21,5,9,5,1,Clouds,broken clouds,27.01,30.66,27.01,27.01,89,1007,10000,1.03,190,53,,,4,Poor,356.96,0.0,4.47,55.9,1.92,50.08,76.25,2.43,openweather
+"DHA Phase 4, Lahore, Pakistan",31.4697,74.3984,2026-09-05T23:40:32+00:00,23,5,9,5,1,Clouds,scattered clouds,27.01,30.66,27.01,27.01,89,1006,10000,1.54,150,26,,,3,Moderate,330.17,0.0,3.93,44.48,1.63,48.01,78.53,2.07,openweather
