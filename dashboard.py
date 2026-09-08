@@ -9,8 +9,12 @@ import plotly.graph_objects as go
 import requests
 import streamlit as st
 
+from api_server import eda as api_eda
+from api_server import explain as api_explain
+from api_server import forecast as api_forecast
+from api_server import latest as api_latest
 
-API_URL = os.getenv("AQI_API_URL", "http://127.0.0.1:8000")
+API_URL = os.getenv("AQI_API_URL", "").strip().rstrip("/")
 
 AQI_COLORS = {
     "Good": "#22C55E",
@@ -107,9 +111,20 @@ st.caption("Real-time and forecasted AQI from feature store + model registry")
 
 
 def fetch_json(path: str) -> dict:
-    response = requests.get(f"{API_URL}{path}", timeout=20)
-    response.raise_for_status()
-    return response.json()
+    if API_URL:
+        response = requests.get(f"{API_URL}{path}", timeout=20)
+        response.raise_for_status()
+        return response.json()
+
+    if path == "/latest":
+        return api_latest()
+    if path == "/forecast?horizon_hours=72":
+        return api_forecast(horizon_hours=72)
+    if path == "/eda":
+        return api_eda()
+    if path == "/explain?top_k=10":
+        return api_explain(top_k=10)
+    raise ValueError(f"Unsupported API path: {path}")
 
 
 try:
@@ -118,11 +133,12 @@ try:
     eda = fetch_json("/eda")
     explain = fetch_json("/explain?top_k=10")
 except Exception as exc:
-    st.error(f"Failed to reach API at {API_URL}. Error: {exc}")
-    st.info(
-        "Deploy the FastAPI service separately, then set AQI_API_URL to its public HTTPS URL "
-        "(for local development: uvicorn api_server:app --host 0.0.0.0 --port 8000)."
-    )
+    if API_URL:
+        st.error(f"Failed to reach API at {API_URL}. Error: {exc}")
+        st.info("Check that the configured API service is online and that AQI_API_URL is correct.")
+    else:
+        st.error(f"Failed to load the embedded API. Error: {exc}")
+        st.info("Check that the feature store and model registry are present in the repository.")
     st.stop()
 
 

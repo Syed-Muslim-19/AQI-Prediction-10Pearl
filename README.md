@@ -83,22 +83,21 @@ python aqi_train.py --feature-store-path data/feature_store/aqi_feature_table.cs
 
 ## Deploying the dashboard
 
-The dashboard and API are separate services. Streamlit Community Cloud runs
-`dashboard.py`, but it does not run `api_server.py` on the same machine.
-Therefore, `http://127.0.0.1:8000` only works when the API is running locally.
+The Streamlit dashboard calls the existing FastAPI route logic in-process by
+default. This makes the dashboard self-contained on Streamlit Community Cloud:
+no second server or localhost URL is required. The deployed repository must
+include `data/feature_store/` and `data/model_registry/`.
 
-1. Deploy this repository as a web service on a host such as Render, Railway,
-   or Fly.io. Use the included `Dockerfile`, or start the service with:
+For a separate API deployment, set the Streamlit environment variable
+`AQI_API_URL=https://<api-host>` (no `/latest` suffix). The dashboard will use
+that service instead of the embedded route logic. The included `Dockerfile`
+starts the standalone API with:
 
-   ```bash
-   uvicorn api_server:app --host 0.0.0.0 --port $PORT
-   ```
+```bash
+uvicorn api_server:app --host 0.0.0.0 --port $PORT
+```
 
-   The service must expose the repository files under `data/`, including
-   `data/feature_store/` and `data/model_registry/`. Verify it responds at
-   `https://<api-host>/health`.
-2. In the Streamlit app settings, add the environment variable
-   `AQI_API_URL=https://<api-host>` (no `/latest` suffix), then reboot the app.
+Verify a separate deployment responds at `https://<api-host>/health`.
 
 For local development, start the API in one terminal and the dashboard in
 another:
@@ -108,8 +107,8 @@ uvicorn api_server:app --host 127.0.0.1 --port 8000
 streamlit run dashboard.py
 ```
 
-Do not use `127.0.0.1` as `AQI_API_URL` in the deployed Streamlit app; it
-refers to the Streamlit container itself, not your computer or the API host.
+For local development, omit `AQI_API_URL` to use the embedded API, or set it
+to `http://127.0.0.1:8000` when testing the standalone server.
 
 ---
 
