@@ -7,3 +7,4 @@ uvicorn>=0.30
 streamlit>=1.37
 plotly>=5.23
 shap>=0.46
+xgboost>=2.1
