@@ -1,0 +1,6 @@
+{
+  "path": "data\\model_registry\\aqi_target_aqi_t_plus_1h_xgboost_20260908T100650Z",
+  "model_name": "xgboost",
+  "target_column": "target_aqi_t_plus_1h",
+  "trained_at_utc": "2026-09-08T10:06:50.674214+00:00"
+}

@@ -1,0 +1,10 @@
+{
+  "model_name": "xgboost",
+  "target_column": "target_aqi_t_plus_1h",
+  "created_at_utc": "2026-09-08T10:06:50.674214+00:00",
+  "source_feature_store": "data\\feature_store\\aqi_feature_table.csv",
+  "row_count": 472,
+  "test_fraction_used": 0.20127118644067796,
+  "target_mode": "delta",
+  "current_value_column": "aqi"
+}
