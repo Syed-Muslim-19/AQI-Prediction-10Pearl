@@ -86,7 +86,9 @@ python aqi_train.py --feature-store-path data/feature_store/aqi_feature_table.cs
 The Streamlit dashboard calls the existing FastAPI route logic in-process by
 default. This makes the dashboard self-contained on Streamlit Community Cloud:
 no second server or localhost URL is required. The deployed repository must
-include `data/feature_store/` and `data/model_registry/`.
+include `data/feature_store/` and the committed latest model bundle under
+`data/model_registry/`. Historical training outputs remain ignored to avoid
+committing every generated model.
 
 For a separate API deployment, set the Streamlit environment variable
 `AQI_API_URL=https://<api-host>` (no `/latest` suffix). The dashboard will use

@@ -5,7 +5,11 @@ __pycache__/
 
 # Generated pipeline outputs that should not be committed
 data/raw/
-data/model_registry/
+data/model_registry/*
+!data/model_registry/
+!data/model_registry/latest_model.json
+!data/model_registry/aqi_target_aqi_t_plus_1h_xgboost_20260908T100650Z/
+!data/model_registry/aqi_target_aqi_t_plus_1h_xgboost_20260908T100650Z/*
 
 # Optional local environment files
 .env
