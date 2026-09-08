@@ -119,7 +119,10 @@ try:
     explain = fetch_json("/explain?top_k=10")
 except Exception as exc:
     st.error(f"Failed to reach API at {API_URL}. Error: {exc}")
-    st.info("Start API first: uvicorn api_server:app --host 0.0.0.0 --port 8000")
+    st.info(
+        "Deploy the FastAPI service separately, then set AQI_API_URL to its public HTTPS URL "
+        "(for local development: uvicorn api_server:app --host 0.0.0.0 --port 8000)."
+    )
     st.stop()
 
 

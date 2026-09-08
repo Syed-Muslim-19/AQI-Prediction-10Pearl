@@ -81,6 +81,38 @@ python aqi_train.py --feature-store-path data/feature_store/aqi_feature_table.cs
 
 ---
 
+## Deploying the dashboard
+
+The dashboard and API are separate services. Streamlit Community Cloud runs
+`dashboard.py`, but it does not run `api_server.py` on the same machine.
+Therefore, `http://127.0.0.1:8000` only works when the API is running locally.
+
+1. Deploy this repository as a web service on a host such as Render, Railway,
+   or Fly.io. Use the included `Dockerfile`, or start the service with:
+
+   ```bash
+   uvicorn api_server:app --host 0.0.0.0 --port $PORT
+   ```
+
+   The service must expose the repository files under `data/`, including
+   `data/feature_store/` and `data/model_registry/`. Verify it responds at
+   `https://<api-host>/health`.
+2. In the Streamlit app settings, add the environment variable
+   `AQI_API_URL=https://<api-host>` (no `/latest` suffix), then reboot the app.
+
+For local development, start the API in one terminal and the dashboard in
+another:
+
+```bash
+uvicorn api_server:app --host 127.0.0.1 --port 8000
+streamlit run dashboard.py
+```
+
+Do not use `127.0.0.1` as `AQI_API_URL` in the deployed Streamlit app; it
+refers to the Streamlit container itself, not your computer or the API host.
+
+---
+
 <div align="center">
 <sub>Built with an unusual amount of paranoia about fooling itself.</sub>
 </div>
